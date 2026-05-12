@@ -33,7 +33,7 @@ class $modify(SplitUpdateLayer, LoadingLayer)
 	struct Fields
 	{
 		async::TaskHolder<web::WebResponse> m_listener;
-	}
+	};
 	/**
 	 * Typically classes in GD are initialized using the `init` function, (though not always!),
 	 * so here we use it to add our own button to the bottom menu.
@@ -41,9 +41,12 @@ class $modify(SplitUpdateLayer, LoadingLayer)
 	 * Note that for all hooks, your signature has to *match exactly*,
 	 * `void init()` would not place a hook!
 	 */
-	void
-	loadingFinished()
+	bool
+	init()
 	{
+		if (!LoadingLayer::init(false))
+			return false;
+
 		auto version = "v1.0.0";
 		/**
 		 * We call the original init function so that the
@@ -60,7 +63,7 @@ class $modify(SplitUpdateLayer, LoadingLayer)
 		 * See this page for more info about buttons
 		 * https://docs.geode-sdk.org/tutorials/buttons
 		 */
-		this.m_textArea->setString("Checking for SplitGDPS updates...");
+		this->m_textArea->setString("Checking for SplitGDPS updates...");
 		this->updateProgress(0);
 		web::WebRequest req = web::WebRequest();
 		req.param("version", version);
@@ -72,27 +75,33 @@ class $modify(SplitUpdateLayer, LoadingLayer)
 		this->m_fields->m_listener.spawn(
 			"check update",
 			std::move(future), // you can also do `req.post()` directly here instead
-			[](web::WebResponse response)
+			[this, ls, version](web::WebResponse response)
 			{
 				auto res = response.json();
+				if (!res)
+				{
+					ls->fadeAndRemove();
+					return;
+				}
 				// matjson::Value thing is returned from res
 				//  Get the value of "latest" key
-				auto latest = res["latest"];
+				auto resVal = res.unwrap();
+				auto latest = resVal["latest"].asString();
 				auto current = version;
-				auto updateURL = res["updateURL"];
-				auto forceUpdate = res["forceUpdate"];
-				loadingCircle->fadeAndRemove();
+				auto updateURL = resVal["updateURL"];
+				auto forceUpdate = resVal["forceUpdate"].asBool();
+				ls->fadeAndRemove();
 				this->updateProgress(10);
-				if (latest != current)
+				if (latest.ok() && forceUpdate.ok() && latest.unwrap() != current)
 				{
-					if (forceUpdate)
+					if (forceUpdate.unwrap())
 					{
-						geode::createQuickPopup("Update Requred", "A required update to SplitGDPS is available.\nVersion: " + latest.asString() + "\nCurrentVersion: " + current.asString(), "exit", "Update", [](auto bool btn2)
+						geode::createQuickPopup("Update Requred", "A required update to SplitGDPS is available.\nVersion: " + latest.unwrap() + "\nCurrentVersion: " + std::string(current), "exit", "Update", [this](FLAlertLayer *alertLayer, bool btn2)
 												{
 							if (btn2)
 							{
 								this->updateProgress(15);
-								this.m_textArea->setString("Updating SplitGDPS");
+								this->m_textArea->setString("Updating SplitGDPS");
 								// TODO: actually make this
 							} else
 							{
@@ -101,23 +110,17 @@ class $modify(SplitUpdateLayer, LoadingLayer)
 					}
 					else
 					{
-						geode::createQuickPopup("Update Available", "An update to SplitGDPS is available.\nVersion: " + latest.asString() + "\nCurrentVersion: " + current.asString(), "Later", "Update", [](auto bool btn2)
+						geode::createQuickPopup("Update Available", "An update to SplitGDPS is available.\nVersion: " + latest.unwrap() + "\nCurrentVersion: " + std::string(current), "Later", "Update", [this](FLAlertLayer *alertLayer, bool btn2)
 												{
 							if (btn2)
 							{
 								this->updateProgress(15);
-								this.m_textArea->setString("Updating SplitGDPS");
-							} else {
-								LoadingLayer::loadingFinished();
-								return;
+								this->m_textArea->setString("Updating SplitGDPS");
 							} });
 					}
 				}
 			});
 
-		/**
-		 * We return `true` to indicate that the class was properly initialized.
-		 */
-
-		LoadingLayer::loadingFinished()
+		return true;
 	}
+};
